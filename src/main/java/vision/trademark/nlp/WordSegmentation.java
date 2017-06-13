@@ -151,15 +151,17 @@ public class WordSegmentation {
         for (Pair<Position, Double> x : meaningfulWords) {
             graph.addVertex(x);
         }
-        Set<Pair<Position, Position>> seen = new HashSet<>();
+        Set<Set<Position>> seen = new HashSet<>();
         for (Pair<Position, Double> x : meaningfulWords) {
             for (Pair<Position, Double> y : meaningfulWords) {
                 if (!x.equals(y)) {
-                    if (!checkIntersection(x.getLeft(), y.getLeft()).isEmpty()) {
-                        Pair<Position, Position> of = Pair.of(x.getLeft(), y.getLeft());
-                        if (!seen.contains(of)) {
+                    if (!isNotIntersecting(x.getLeft(), y.getLeft())) {
+                        Set<Position> check = new HashSet<>();
+                        check.add(x.getLeft());
+                        check.add(y.getLeft());
+                        if (!seen.contains(check)) {
                             graph.addEdge(x, y);
-                            seen.add(of);
+                            seen.add(check);
                         }
                     }
                 }
@@ -232,7 +234,7 @@ public class WordSegmentation {
             for (Pair<Position, Double> tu2 : meaningfulWords) {
                 Position p1 = tu1.getLeft();
                 Position p2 = tu2.getLeft();
-                if (checkIntersection(p1, p2).isEmpty() && p1.start == p2.end + 1) {
+                if (isNotIntersecting(p1, p2) && p1.start == p2.end + 1) {
                     prevList.add(pos + 1);
                 }
                 pos++;
@@ -382,9 +384,8 @@ public class WordSegmentation {
         return xs;
     }
 
-    private Set<Integer> checkIntersection(Position left, Position right) {
-        Set<Integer> range = IntStream.range(right.start, right.end + 1).boxed().collect(Collectors.toSet());
-        return IntStream.range(left.start, left.end + 1).filter(range::contains).boxed().collect(Collectors.toSet());
+    private boolean isNotIntersecting(Position left, Position right) {
+        return right.end < left.start || right.start > left.end;
     }
 
     private double getUnigramScore(String word) {
