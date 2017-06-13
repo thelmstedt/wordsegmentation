@@ -214,8 +214,7 @@ public class WordSegmentation {
 
     private Triple<Integer, Integer, List<String>> optComponent(Set<Pair<Position, Double>> in) {
         List<Pair<Position, Double>> meaningfulWords = in.stream()
-                .sorted(Comparator.comparingInt((ToIntFunction<Pair<Position, Double>>) x1 -> x1.getLeft().end)
-                        .thenComparing(Comparator.comparingInt(x -> x.getLeft().start)))
+                .sorted(Comparator.comparingInt(x -> x.getLeft().end))
                 .collect(Collectors.toList());
 
         List<Pair<Pair<Position, Double>, Something>> lst = new CircularList<>();
