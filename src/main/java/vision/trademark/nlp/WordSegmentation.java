@@ -22,16 +22,23 @@ import java.util.zip.GZIPInputStream;
 
 public class WordSegmentation {
     private final Map<String, Long> bigramCounts;
-    private final Map<String, Long> unigramCounts;
     private final Map<String, Long> fullUnigramCounts;
+    private final Map<String, Long> ngramDistribution;
+    private final Map<String, List<String>> ngramTree;
+    private final int minLength;
 
     /**
-     * Users are expected to construct this once and keep it around.
+     * To avoid paying the cost of calculating ngrams for each segmentation,
+     * we only allow a single minLength for all segments. 
      */
-    public WordSegmentation() {
-        bigramCounts = loadWordList("/bigrams.txt.gz");
-        unigramCounts = loadWordList("/unigrams.txt.gz");
-        fullUnigramCounts = loadWordList("/unigrams.txt.original.gz"); //just for scoring. TODO necessary?
+    public WordSegmentation(int minLength) {
+        this.bigramCounts = loadWordList("/bigrams.txt.gz");
+        this.fullUnigramCounts = loadWordList("/unigrams.txt.original.gz");
+
+        Pair<Map<String, Long>, Map<String, List<String>>> ngrams = calculateNgrams(minLength, loadWordList("/unigrams.txt.gz"));
+        this.ngramDistribution = ngrams.getLeft();
+        this.ngramTree = ngrams.getRight();
+        this.minLength = minLength;
     }
 
     private static Map<String, Long> loadWordList(String resourcePath) {
@@ -54,12 +61,8 @@ public class WordSegmentation {
     }
 
 
-    public List<String> segment(int minLength, String text) {
+    public List<String> segment(String text) {
         text = text == null ? "" : text.toLowerCase().trim().replaceAll("'", "");
-
-        Pair<Map<String, Long>, Map<String, List<String>>> ngrams = calculateNgrams(minLength);
-        Map<String, Long> ngramDistribution = ngrams.getLeft();
-        Map<String, List<String>> ngramTree = ngrams.getRight();
 
         List<Pair<Position, Double>> meaningfulWords = meaningfulWords(minLength, text, ngramDistribution, ngramTree);
 
@@ -170,7 +173,7 @@ public class WordSegmentation {
      * or at construction time, and pin to a single length. The CPU time not
      * too bad, but it's a nontrivial amount of RAM, so we do it each time.
      */
-    private Pair<Map<String, Long>, Map<String, List<String>>> calculateNgrams(int minLength) {
+    private Pair<Map<String, Long>, Map<String, List<String>>> calculateNgrams(int minLength, Map<String, Long> unigramCounts) {
         Map<String, Long> ngramDistribution = new HashMap<>();
         Map<String, List<String>> ngramTree = new HashMap<>();
         for (Map.Entry<String, Long> e : unigramCounts.entrySet()) {
