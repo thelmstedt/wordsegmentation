@@ -1,8 +1,7 @@
-import org.apache.commons.lang3.tuple.Pair;
-import org.apache.commons.lang3.tuple.Triple;
+package vision.trademark.nlp;
+
 import org.junit.Test;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -10,18 +9,10 @@ import java.util.stream.Stream;
 
 import static org.hamcrest.MatcherAssert.assertThat;
 import static org.hamcrest.core.Is.is;
-import static org.junit.Assert.assertFalse;
 
 public class WordSegmentationTest {
 
     private final WordSegmentation ws = new WordSegmentation();
-
-    @Test
-    public void testPairs() throws Exception {
-        ArrayList<Pair<Integer, Integer>> pairs =
-                ws.missingSegments("123abc123", Stream.of(3, 4, 5).collect(Collectors.toSet()));
-        assertThat(pairs, is(Arrays.asList(Pair.of(0, 2), Pair.of(6, 8))));
-    }
 
     @Test
     public void testSegment() throws Exception {

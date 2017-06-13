@@ -1,3 +1,5 @@
+package vision.trademark.nlp;
+
 import org.apache.commons.lang3.StringUtils;
 import org.apache.commons.lang3.builder.ToStringBuilder;
 import org.apache.commons.lang3.builder.ToStringStyle;
@@ -14,7 +16,6 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.function.ToIntFunction;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.zip.GZIPInputStream;
@@ -60,6 +61,49 @@ public class WordSegmentation {
         Map<String, Long> ngramDistribution = ngrams.getLeft();
         Map<String, List<String>> ngramTree = ngrams.getRight();
 
+        List<Pair<Position, Double>> meaningfulWords = meaningfulWords(minLength, text, ngramDistribution, ngramTree);
+
+        List<Set<Pair<Position, Double>>> sets = connectedSets(meaningfulWords);
+
+        List<Triple<Integer, Integer, List<String>>> postComponents = new ArrayList<>();
+        for (Set<Pair<Position, Double>> each : sets) {
+            Triple<Integer, Integer, List<String>> pairs = optComponent(each);
+            postComponents.add(pairs);
+        }
+
+        Set<Integer> meaningfulIndices = new HashSet<>();
+        for (Triple<Integer, Integer, List<String>> x : postComponents) {
+            meaningfulIndices.addAll(IntStream.range(x.getLeft(), x.getMiddle() + 1).boxed().collect(Collectors.toList()));
+        }
+
+        List<Pair<Integer, Integer>> nonMeaningfulRanges = missingSegments(text, meaningfulIndices);
+
+        List<Pair<Integer, Integer>> overallPosList = new ArrayList<>();
+        overallPosList.addAll(nonMeaningfulRanges);
+
+        Map<Pair<Integer, Integer>, List<String>> meaningfulDic = new HashMap<>();
+        for (Triple<Integer, Integer, List<String>> x : postComponents) {
+            Pair<Integer, Integer> p = Pair.of(x.getLeft(), x.getMiddle());
+            overallPosList.add(p);
+            meaningfulDic.put(p, x.getRight());
+        }
+        overallPosList.sort(Comparator.comparing(Pair::getLeft));
+
+        List<String> returnList = new ArrayList<>();
+        for (Pair<Integer, Integer> x : overallPosList) {
+            if (meaningfulDic.containsKey(x)) {
+                returnList.addAll(meaningfulDic.get(x));
+            } else {
+                Integer left = x.getLeft();
+                Integer right = x.getRight();
+                String substring = text.substring(left, right + 1);
+                returnList.add(substring);
+            }
+        }
+        return returnList;
+    }
+
+    private List<Pair<Position, Double>> meaningfulWords(int minLength, String text, Map<String, Long> ngramDistribution, Map<String, List<String>> ngramTree) {
         List<WordPosition> cuts = cuts(minLength, text);
         Map<Position, String> pairDic = new HashMap<>();
         List<Pair<Long, Position>> candidateList = new ArrayList<>();
@@ -92,42 +136,13 @@ public class WordSegmentation {
             }
         }
         meaningfulWords.sort(Comparator.comparingInt(it -> it.getLeft().start));
-
-        List<Set<Pair<Position, Double>>> sets = connectedSets(meaningfulWords);
-
-        List<Triple<Integer, Integer, List<String>>> postComponents = new ArrayList<>();
-        for (Set<Pair<Position, Double>> each : sets) {
-            Triple<Integer, Integer, List<String>> pairs = optComponent(each);
-            postComponents.add(pairs);
-        }
-
-        List<Pair<Integer, Integer>> nonMeaningfulRanges = nonMeaningfulRange(text, postComponents);
-
-        List<Pair<Integer, Integer>> overallPosList = new ArrayList<>();
-        overallPosList.addAll(nonMeaningfulRanges);
-
-        Map<Pair<Integer, Integer>, List<String>> meaningfulDic = new HashMap<>();
-        for (Triple<Integer, Integer, List<String>> each : postComponents) {
-            Pair<Integer, Integer> p = Pair.of(each.getLeft(), each.getMiddle());
-            overallPosList.add(p);
-            meaningfulDic.put(p, each.getRight());
-        }
-        overallPosList.sort(Comparator.comparing(Pair::getLeft));
-
-        List<String> returnList = new ArrayList<>();
-        for (Pair<Integer, Integer> each : overallPosList) {
-            if (meaningfulDic.containsKey(each)) {
-                returnList.addAll(meaningfulDic.get(each));
-            } else {
-                Integer left = each.getLeft();
-                Integer right = each.getRight();
-                String substring = text.substring(left, right + 1);
-                returnList.add(substring);
-            }
-        }
-        return returnList;
+        return meaningfulWords;
     }
 
+    /**
+     * Places {@param meaningfulWords} in a graph (connected by positions), returning
+     * all connected subgraphs as sets.
+     */
     private List<Set<Pair<Position, Double>>> connectedSets(List<Pair<Position, Double>> meaningfulWords) {
         DirectedGraph<Pair<Position, Double>, DefaultEdge> graph = new DefaultDirectedGraph<>(DefaultEdge.class);
         for (Pair<Position, Double> x : meaningfulWords) {
@@ -177,17 +192,7 @@ public class WordSegmentation {
         return Pair.of(ngramDistribution, ngramTree);
     }
 
-    private List<Pair<Integer, Integer>> nonMeaningfulRange(String text,
-                                                            List<Triple<Integer, Integer, List<String>>> postComponents) {
-        Set<Integer> meaningfulIndices = new HashSet<>();
-        for (Triple<Integer, Integer, List<String>> each : postComponents) {
-            meaningfulIndices.addAll(IntStream.range(each.getLeft(), each.getMiddle() + 1).boxed().collect(Collectors.toList()));
-        }
-
-        return missingSegments(text, meaningfulIndices);
-    }
-
-    ArrayList<Pair<Integer, Integer>> missingSegments(String text, Set<Integer> meaningfulIndices) {
+    List<Pair<Integer, Integer>> missingSegments(String text, Set<Integer> meaningfulIndices) {
         ArrayList<Pair<Integer, Integer>> pairs = new ArrayList<>();
 
         List<Integer> current = new ArrayList<>();
@@ -217,7 +222,7 @@ public class WordSegmentation {
                 .sorted(Comparator.comparingInt(x -> x.getLeft().end))
                 .collect(Collectors.toList());
 
-        List<Pair<Pair<Position, Double>, Something>> lst = new CircularList<>();
+        List<Pair<Pair<Position, Double>, MaybeRange>> lst = new CircularList<>();
         for (Pair<Position, Double> tu1 : meaningfulWords) {
             int pos = 0;
             ArrayList<Integer> prevList = new ArrayList<>();
@@ -233,28 +238,15 @@ public class WordSegmentation {
                 Collections.reverse(prevList);
             }
             if (prevList.isEmpty()) {
-                lst.add(Pair.of(tu1, new Something(0, Optional.empty())));
+                lst.add(Pair.of(tu1, new MaybeRange(0, Optional.empty())));
             } else if (prevList.size() == 1) {
-                lst.add(Pair.of(tu1, new Something(prevList.get(0), Optional.empty())));
+                lst.add(Pair.of(tu1, new MaybeRange(prevList.get(0), Optional.empty())));
             } else {
-                lst.add(Pair.of(tu1, new Something(prevList.get(0), Optional.of(prevList.get(1)))));
+                lst.add(Pair.of(tu1, new MaybeRange(prevList.get(0), Optional.of(prevList.get(1)))));
             }
         }
 
-        int j = lst.size();
-
-        Pair<Double, HashMap<Integer, Double>> r = opt(j, lst);
-        HashMap<Integer, Double> memo = r.getRight();
-        Double result = r.getLeft() == null ? 0d : r.getLeft();
-
-        List<Integer> maxV =
-                memo.entrySet().stream()
-                        .sorted(Comparator.comparing(Map.Entry::getValue))
-                        .filter(x -> x.getValue().equals(result))
-                        .map(Map.Entry::getKey).collect(Collectors.toList());
-        j = maxV.get(maxV.size() - 1) + 1;
-
-        List<Position> path = path(lst, j, memo);
+        List<Position> path = calculatePaths(lst);
 
         List<String> wordList = new ArrayList<>();
         for (Position position : path) {
@@ -267,17 +259,29 @@ public class WordSegmentation {
 
     }
 
-    private List<Position> path(List<Pair<Pair<Position, Double>, Something>> lst, int j, HashMap<Integer, Double> memo) {
+    private List<Position> calculatePaths(List<Pair<Pair<Position, Double>, MaybeRange>> lst) {
+        int j = lst.size();
+
+        HashMap<Integer, Double> memo = new HashMap<>();
+        Double result = opt(j, lst, memo);
+
+        List<Integer> maxV =
+                memo.entrySet().stream()
+                        .sorted(Comparator.comparing(Map.Entry::getValue))
+                        .filter(x -> x.getValue().equals(result))
+                        .map(Map.Entry::getKey).collect(Collectors.toList());
+        j = maxV.get(maxV.size() - 1) + 1;
+
         List<Position> path = new ArrayList<>();
-        _path(j, path, memo, lst);
+        path(j, path, memo, lst);
         Collections.reverse(path);
         return path;
     }
 
-    private void _path(int j,
-                       List<Position> path,
-                       HashMap<Integer, Double> memo,
-                       List<Pair<Pair<Position, Double>, Something>> lst) {
+    private void path(int j,
+                      List<Position> path,
+                      HashMap<Integer, Double> memo,
+                      List<Pair<Pair<Position, Double>, MaybeRange>> lst) {
         if (j == 0) {
             return;
         }
@@ -287,47 +291,41 @@ public class WordSegmentation {
                 : memo.get(0) != null && memo.get(0).equals(0d);
         if (b) {
             if (j != 1) {
-                _path(j - 1, path, memo, lst);
+                path(j - 1, path, memo, lst);
             } else {
                 path.add(lst.get(0).getLeft().getLeft());
             }
         } else {
-            Pair<Pair<Position, Double>, Something> prev = lst.get(j - 1);
-            Something thing = prev.getRight();
+            Pair<Pair<Position, Double>, MaybeRange> prev = lst.get(j - 1);
+            MaybeRange range = prev.getRight();
             int tempI = 0;
-            if (!thing.end.isPresent()) {
+            if (!range.end.isPresent()) {
                 path.add(prev.getLeft().getLeft());
-                _path(prev.getRight().get(tempI), path, memo, lst);
+                path(prev.getRight().get(tempI), path, memo, lst);
             } else {
-                List<Double> pList = Arrays.asList(memo.get(thing.start - 1), memo.get(thing.end.get() - 1));
+                List<Double> pList = Arrays.asList(memo.get(range.start - 1), memo.get(range.end.get() - 1));
                 Double maxP = Double.max(pList.get(0), pList.get(1));
                 path.add(prev.getLeft().getLeft());
-                _path(pList.get(0).equals(maxP) ? thing.start : thing.end.get(), path, memo, lst);
+                path(pList.get(0).equals(maxP) ? range.start : range.end.get(), path, memo, lst);
 
             }
         }
     }
 
-    private Pair<Double, HashMap<Integer, Double>> opt(int j, List<Pair<Pair<Position, Double>, Something>> lst) {
-        HashMap<Integer, Double> memo = new HashMap<>();
-        Double aDouble = _opt(j, lst, memo);
-        return Pair.of(aDouble, memo);
-    }
-
-    private Double _opt(int j, List<Pair<Pair<Position, Double>, Something>> lst, HashMap<Integer, Double> memo) {
+    private Double opt(int j, List<Pair<Pair<Position, Double>, MaybeRange>> lst, HashMap<Integer, Double> memo) {
         if (j == 0) return null;
 
         if (memo.containsKey(j - 1)) {
             return memo.get(j - 1);
         } else {
-            Pair<Pair<Position, Double>, Something> next = lst.get(j - 1);
+            Pair<Pair<Position, Double>, MaybeRange> next = lst.get(j - 1);
             Double max = max(
                     //choose j
-                    add(_opt(next.getRight().start, lst, memo),
+                    add(opt(next.getRight().start, lst, memo),
                             next.getLeft().getRight(),
                             penalize(j, next.getRight().start, lst)),
                     //not choose j and jump to j-1 only when nesrest overlpping word has the same finish position
-                    lst.get(j - 2).getLeft().getLeft().end == next.getLeft().getLeft().end ? _opt(j - 1, lst, memo) : null
+                    lst.get(j - 2).getLeft().getLeft().end == next.getLeft().getLeft().end ? opt(j - 1, lst, memo) : null
             );
             memo.put(j - 1, max);
             return max;
@@ -349,12 +347,12 @@ public class WordSegmentation {
         }
     }
 
-    private Double penalize(int current, Integer prev, List<Pair<Pair<Position, Double>, Something>> lst) {
+    private Double penalize(int current, Integer prev, List<Pair<Pair<Position, Double>, MaybeRange>> lst) {
         double penalty = -10;
         double bigramReward = 0;
         double gap;
-        Pair<Pair<Position, Double>, Something> curr = lst.get(current - 1);
-        Pair<Pair<Position, Double>, Something> previous = lst.get(prev - 1);
+        Pair<Pair<Position, Double>, MaybeRange> curr = lst.get(current - 1);
+        Pair<Pair<Position, Double>, MaybeRange> previous = lst.get(prev - 1);
 
         if (prev == 0) {
             gap = penalty * (curr.getLeft().getLeft().start);
@@ -370,19 +368,45 @@ public class WordSegmentation {
         return gap + bigramReward;
     }
 
-    public class CircularList<E> extends ArrayList<E> {
+
+    private List<WordPosition> cuts(int minLen, String word) {
+        ArrayList<WordPosition> xs = new ArrayList<>();
+        int counter = 0;
+        for (int i = minLen; i < word.length() + 1; i++) {
+            xs.add(new WordPosition(word.substring(counter, i), counter, counter + minLen, word.substring(i, word.length())));
+            counter++;
+        }
+        return xs;
+    }
+
+    private Set<Integer> checkIntersection(Position left, Position right) {
+        Set<Integer> range = IntStream.range(right.start, right.end + 1).boxed().collect(Collectors.toSet());
+        return IntStream.range(left.start, left.end + 1).filter(range::contains).boxed().collect(Collectors.toSet());
+    }
+
+    private double getUnigramScore(String word) {
+        double scale = Math.log10(1024908267229.0);
+        Long x = fullUnigramCounts.get(word);
+        return x != null
+                ? Math.log10(x) - scale
+                : Math.log10(10.0) - (scale + Math.log10(Math.pow(10, word.length())));
+    }
+
+    // Simplifying porting from python
+    private class CircularList<E> extends ArrayList<E> {
         @Override
         public E get(int i) {
             return super.get(i < 0 ? i + size() : i);
         }
+
     }
 
 
-    class Something {
+    private class MaybeRange {
         final Integer start;
         final Optional<Integer> end;
 
-        Something(Integer start, Optional<Integer> end) {
+        MaybeRange(Integer start, Optional<Integer> end) {
             this.start = start;
             this.end = end;
         }
@@ -402,17 +426,27 @@ public class WordSegmentation {
                 return end.get();
             }
         }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            MaybeRange maybeRange = (MaybeRange) o;
+            return Objects.equals(start, maybeRange.start) &&
+                    Objects.equals(end, maybeRange.end);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(start, end);
+        }
     }
 
-
-    private Set<Integer> checkIntersection(Position left, Position right) {
-        Set<Integer> range = IntStream.range(right.start, right.end + 1).boxed().collect(Collectors.toSet());
-        return IntStream.range(left.start, left.end + 1).filter(range::contains).boxed().collect(Collectors.toSet());
-    }
 
     private static class Position {
         private final String ngram;
         private final int start;
+
         private final int end;
 
         Position(String ngram, int start, int end) {
@@ -444,11 +478,12 @@ public class WordSegmentation {
         public int hashCode() {
             return Objects.hash(ngram, start, end);
         }
-    }
 
+    }
 
     private static class WordPosition {
         private final Position prefix;
+
         private final String suffix;
 
         WordPosition(String ngram, int start, int end, String suffix) {
@@ -477,24 +512,8 @@ public class WordSegmentation {
         public int hashCode() {
             return Objects.hash(prefix, suffix);
         }
+
     }
 
-    private List<WordPosition> cuts(int minLen, String word) {
-        ArrayList<WordPosition> xs = new ArrayList<>();
-        int counter = 0;
-        for (int i = minLen; i < word.length() + 1; i++) {
-            xs.add(new WordPosition(word.substring(counter, i), counter, counter + minLen, word.substring(i, word.length())));
-            counter++;
-        }
-        return xs;
-    }
-
-    double getUnigramScore(String word) {
-        double scale = Math.log10(1024908267229.0);
-        Long x = fullUnigramCounts.get(word);
-        return x != null
-                ? Math.log10(x) - scale
-                : Math.log10(10.0) - (scale + Math.log10(Math.pow(10, word.length())));
-    }
 
 }
