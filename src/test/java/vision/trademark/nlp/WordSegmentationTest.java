@@ -19,6 +19,7 @@ public class WordSegmentationTest {
         assertThat("all good", ws.segment("universityofwashington"), is(Arrays.asList("university", "of", "washington")));
         assertThat("bad on end", ws.segment("qqquniversityofwashingtonqqq"), is(Arrays.asList("qqq", "university", "of", "washington", "qqq")));
         assertThat("bad in middle", ws.segment("universityqqqofwashington"), is(Arrays.asList("university", "qqq", "of", "washington")));
+        assertThat("narcissism", ws.segment("trademarkvision"), is(Arrays.asList("trademark", "vision")));
     }
 
     @Test

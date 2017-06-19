@@ -23,21 +23,18 @@ import java.util.zip.GZIPInputStream;
 public class WordSegmentation {
     private final Map<String, Long> bigramCounts;
     private final Map<String, Long> fullUnigramCounts;
-    private final Map<String, Long> ngramDistribution;
     private final Map<String, List<String>> ngramTree;
     private final int minLength;
 
     /**
-     * To avoid paying the cost of calculating ngrams for each segmentation,
-     * we only allow a single minLength for all segments. 
+     * To avoid paying the cost of calculating ngramTree for each segmentation,
+     * we only allow a single minLength for all segments.
      */
     public WordSegmentation(int minLength) {
         this.bigramCounts = loadWordList("/bigrams.txt.gz");
         this.fullUnigramCounts = loadWordList("/unigrams.txt.original.gz");
 
-        Pair<Map<String, Long>, Map<String, List<String>>> ngrams = calculateNgrams(minLength, loadWordList("/unigrams.txt.gz"));
-        this.ngramDistribution = ngrams.getLeft();
-        this.ngramTree = ngrams.getRight();
+        this.ngramTree = ngramTree(minLength, loadWordList("/unigrams.txt.gz"));
         this.minLength = minLength;
     }
 
@@ -64,7 +61,7 @@ public class WordSegmentation {
     public List<String> segment(String text) {
         text = text == null ? "" : text.toLowerCase().trim().replaceAll("'", "");
 
-        List<Pair<Position, Double>> meaningfulWords = meaningfulWords(minLength, text, ngramDistribution, ngramTree);
+        List<Pair<Position, Double>> meaningfulWords = meaningfulWords(minLength, text, ngramTree);
 
         List<Set<Pair<Position, Double>>> sets = connectedSets(meaningfulWords);
 
@@ -106,30 +103,27 @@ public class WordSegmentation {
         return returnList;
     }
 
-    private List<Pair<Position, Double>> meaningfulWords(int minLength, String text, Map<String, Long> ngramDistribution, Map<String, List<String>> ngramTree) {
+    private List<Pair<Position, Double>> meaningfulWords(int minLength, String text, Map<String, List<String>> ngramTree) {
         List<WordPosition> cuts = cuts(minLength, text);
-        Map<Position, String> pairDic = new HashMap<>();
-        List<Pair<Long, Position>> candidateList = new ArrayList<>();
+        List<WordPosition> candidateList = new ArrayList<>();
         for (WordPosition cut : cuts) {
-            pairDic.put(cut.prefix, cut.suffix);
-            Long aLong = ngramDistribution.get(cut.prefix.ngram);
-            if (aLong != null) {
-                candidateList.add(Pair.of(aLong, cut.prefix));
+            if (ngramTree.containsKey(cut.prefix.ngram)) {
+                candidateList.add(cut);
             }
         }
         Collections.reverse(candidateList);
 
         List<Pair<Position, Double>> meaningfulWords = new ArrayList<>();
-        for (Pair<Long, Position> x : candidateList) {
-            Position prefixPart = x.getRight();
-            int start = prefixPart.start;
-            char c = prefixPart.ngram.charAt(0);
+        for (WordPosition x : candidateList) {
+            int start = x.prefix.start;
+            String recovered = x.prefix.ngram + x.suffix;
+            char c = x.prefix.ngram.charAt(0);
             if ('a' == c) {
                 meaningfulWords.add(Pair.of(new Position("a", start, start + "a".length() - 1), getUnigramScore("a")));
             }
 
-            for (String word : ngramTree.get(prefixPart.ngram)) {
-                if ((prefixPart.ngram + pairDic.get(prefixPart)).contains(word)) {
+            for (String word : ngramTree.get(x.prefix.ngram)) {
+                if (recovered.contains(word)) {
                     if (text.substring(start, start + word.length()).equals(word)) {
                         meaningfulWords.add(Pair.of(
                                 new Position(word, start, start + word.length() - 1), getUnigramScore(word)
@@ -143,8 +137,7 @@ public class WordSegmentation {
     }
 
     /**
-     * Places {@param meaningfulWords} in a graph (connected by positions), returning
-     * all connected subgraphs as sets.
+     * Places {@param meaningfulWords} in a graph (connected by positions), returning all connected subgraphs as sets.
      */
     private List<Set<Pair<Position, Double>>> connectedSets(List<Pair<Position, Double>> meaningfulWords) {
         DirectedGraph<Pair<Position, Double>, DefaultEdge> graph = new DefaultDirectedGraph<>(DefaultEdge.class);
@@ -171,18 +164,20 @@ public class WordSegmentation {
     }
 
     /**
-     * We either calculate this each call to segment (and allow multiple lengths)
-     * or at construction time, and pin to a single length. The CPU time not
-     * too bad, but it's a nontrivial amount of RAM, so we do it each time.
+     * Maps ngrams of length {@param minLength} to the words starting with them.
+     * Note we need to calculate this for the specific length we're allowing,
+     * so we either do this for each segmentation (and incur the CPU cost, but
+     * allow changing the minLength) or at construction (and incur a memory cost,
+     * and restrict it to a single length).
+     *
+     * We've opted to the latter.
      */
-    private Pair<Map<String, Long>, Map<String, List<String>>> calculateNgrams(int minLength, Map<String, Long> unigramCounts) {
-        Map<String, Long> ngramDistribution = new HashMap<>();
+    private Map<String, List<String>> ngramTree(int minLength, Map<String, Long> unigramCounts) {
         Map<String, List<String>> ngramTree = new HashMap<>();
         for (Map.Entry<String, Long> e : unigramCounts.entrySet()) {
             String entry = e.getKey();
             if (entry.length() >= minLength) {
                 String cut = entry.substring(0, minLength);
-                ngramDistribution.merge(cut, e.getValue(), Long::sum);
 
                 if (!ngramTree.containsKey(cut)) {
                     ArrayList<String> v = new ArrayList<>();
@@ -194,10 +189,10 @@ public class WordSegmentation {
             }
         }
 
-        return Pair.of(ngramDistribution, ngramTree);
+        return ngramTree;
     }
 
-    List<Pair<Integer, Integer>> missingSegments(String text, Set<Integer> meaningfulIndices) {
+    private List<Pair<Integer, Integer>> missingSegments(String text, Set<Integer> meaningfulIndices) {
         ArrayList<Pair<Integer, Integer>> pairs = new ArrayList<>();
 
         List<Integer> current = new ArrayList<>();
