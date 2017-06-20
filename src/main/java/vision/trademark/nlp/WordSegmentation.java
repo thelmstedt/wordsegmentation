@@ -104,30 +104,27 @@ public class WordSegmentation {
     }
 
     private List<Pair<Position, Double>> meaningfulWords(int minLength, String text, Map<String, List<String>> ngramTree) {
+        ArrayList<Pair<Position, Double>> meaningfulWords = new ArrayList<>();
+
         List<WordPosition> cuts = cuts(minLength, text);
-        List<WordPosition> candidateList = new ArrayList<>();
-        for (WordPosition cut : cuts) {
-            if (ngramTree.containsKey(cut.prefix.ngram)) {
-                candidateList.add(cut);
-            }
-        }
-        Collections.reverse(candidateList);
+        for (int i = cuts.size() - 1; i >= 0; i--) {
+            WordPosition x = cuts.get(i);
+            List<String> words = ngramTree.get(x.prefix.ngram);
+            if (words != null) {
+                int start = x.prefix.start;
+                String recovered = x.prefix.ngram + x.suffix;
+                char c = x.prefix.ngram.charAt(0);
+                if ('a' == c) {
+                    meaningfulWords.add(Pair.of(new Position("a", start, start + "a".length() - 1), getUnigramScore("a")));
+                }
 
-        List<Pair<Position, Double>> meaningfulWords = new ArrayList<>();
-        for (WordPosition x : candidateList) {
-            int start = x.prefix.start;
-            String recovered = x.prefix.ngram + x.suffix;
-            char c = x.prefix.ngram.charAt(0);
-            if ('a' == c) {
-                meaningfulWords.add(Pair.of(new Position("a", start, start + "a".length() - 1), getUnigramScore("a")));
-            }
-
-            for (String word : ngramTree.get(x.prefix.ngram)) {
-                if (recovered.contains(word)) {
-                    if (text.substring(start, start + word.length()).equals(word)) {
-                        meaningfulWords.add(Pair.of(
-                                new Position(word, start, start + word.length() - 1), getUnigramScore(word)
-                        ));
+                for (String word : words) {
+                    if (recovered.contains(word)) {
+                        if (text.substring(start, start + word.length()).equals(word)) {
+                            meaningfulWords.add(Pair.of(
+                                    new Position(word, start, start + word.length() - 1), getUnigramScore(word)
+                            ));
+                        }
                     }
                 }
             }
