@@ -295,10 +295,9 @@ public class WordSegmentation {
         } else {
             Pair<Pair<Position, Double>, MaybeRange> prev = lst.get(j - 1);
             MaybeRange range = prev.getRight();
-            int tempI = 0;
             if (!range.end.isPresent()) {
                 path.add(prev.getLeft().getLeft());
-                path(prev.getRight().get(tempI), path, memo, lst);
+                path(prev.getRight().start, path, memo, lst);
             } else {
                 List<Double> pList = Arrays.asList(memo.get(range.start - 1), memo.get(range.end.get() - 1));
                 Double maxP = Double.max(pList.get(0), pList.get(1));
@@ -413,14 +412,6 @@ public class WordSegmentation {
                     .append("start", start)
                     .append("end", end)
                     .toString();
-        }
-
-        Integer get(int tempI) {
-            if (tempI == 0) {
-                return start;
-            } else {
-                return end.get();
-            }
         }
 
         @Override
