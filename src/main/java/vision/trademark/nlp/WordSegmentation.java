@@ -61,13 +61,13 @@ public class WordSegmentation {
     public List<String> segment(String text) {
         text = text == null ? "" : text.toLowerCase().trim().replaceAll("'", "");
 
-        List<ScorePosition> meaningfulWords = meaningfulWords(minLength, text, ngramTree);
+        List<ScorePosition<String>> meaningfulWords = meaningfulWords(minLength, text, ngramTree);
 
-        List<Set<ScorePosition>> sets = connectedSets(meaningfulWords);
+        List<Set<ScorePosition<String>>> sets = connectedSets(meaningfulWords);
 
         List<Position<List<String>>> postComponents = new ArrayList<>();
-        for (Set<ScorePosition> each : sets) {
-            postComponents.add(optComponent(each));
+        for (Set<ScorePosition<String>> x : sets) {
+            postComponents.add(optComponent(x));
         }
 
         Set<Integer> meaningfulIndices = new HashSet<>();
@@ -102,8 +102,8 @@ public class WordSegmentation {
         return returnList;
     }
 
-    private List<ScorePosition> meaningfulWords(int minLength, String text, Map<String, List<String>> ngramTree) {
-        List<ScorePosition> meaningfulWords = new ArrayList<>();
+    private List<ScorePosition<String>> meaningfulWords(int minLength, String text, Map<String, List<String>> ngramTree) {
+        List<ScorePosition<String>> meaningfulWords = new ArrayList<>();
 
         List<WordPosition> cuts = cuts(minLength, text);
         for (int i = cuts.size() - 1; i >= 0; i--) {
@@ -114,13 +114,13 @@ public class WordSegmentation {
                 String recovered = x.getPrefix() + x.getSuffix();
                 char c = x.getPrefix().charAt(0);
                 if ('a' == c) {
-                    meaningfulWords.add(new ScorePosition("a", getUnigramScore("a"), start, start + "a".length() - 1));
+                    meaningfulWords.add(new ScorePosition<>("a", getUnigramScore("a"), start, start + "a".length() - 1));
                 }
 
                 for (String word : words) {
                     if (recovered.contains(word)) {
                         if (text.substring(start, start + word.length()).equals(word)) {
-                            meaningfulWords.add(new ScorePosition(word, getUnigramScore(word), start, start + word.length() - 1));
+                            meaningfulWords.add(new ScorePosition<>(word, getUnigramScore(word), start, start + word.length() - 1));
                         }
                     }
                 }
@@ -135,9 +135,9 @@ public class WordSegmentation {
      *
      * @param meaningfulWords
      */
-    private List<Set<ScorePosition>> connectedSets(List<ScorePosition> meaningfulWords) {
-        DirectedGraph<ScorePosition, DefaultEdge> graph = new DefaultDirectedGraph<>(DefaultEdge.class);
-        for (ScorePosition x : meaningfulWords) {
+    private List<Set<ScorePosition<String>>> connectedSets(List<ScorePosition<String>> meaningfulWords) {
+        DirectedGraph<ScorePosition<String>, DefaultEdge> graph = new DefaultDirectedGraph<>(DefaultEdge.class);
+        for (ScorePosition<String> x : meaningfulWords) {
             graph.addVertex(x);
         }
         Set<Set<Position>> seen = new HashSet<>();
@@ -213,16 +213,16 @@ public class WordSegmentation {
         return pairs;
     }
 
-    private Position<List<String>> optComponent(Set<ScorePosition> in) {
-        List<ScorePosition> meaningfulWords = in.stream()
+    private ScorePosition<List<String>> optComponent(Set<ScorePosition<String>> in) {
+        List<ScorePosition<String>> meaningfulWords = in.stream()
                 .sorted(Comparator.comparing(Position::getEnd))
                 .collect(Collectors.toList());
 
-        List<Pair<ScorePosition, MaybeRange>> lst = new CircularList<>();
-        for (ScorePosition p1 : meaningfulWords) {
+        List<Pair<ScorePosition<String>, MaybeRange>> lst = new CircularList<>();
+        for (ScorePosition<String> p1 : meaningfulWords) {
             int pos = 0;
             ArrayList<Integer> prevList = new ArrayList<>();
-            for (ScorePosition p2 : meaningfulWords) {
+            for (ScorePosition<String> p2 : meaningfulWords) {
                 if (isNotIntersecting(p1, p2) && p1.getStart() == p2.getEnd() + 1) {
                     prevList.add(pos + 1);
                 }
@@ -240,20 +240,20 @@ public class WordSegmentation {
             }
         }
 
-        List<Position<String>> path = calculatePaths(lst);
+        Pair<List<Position<String>>, Double> path = calculatePaths(lst);
 
         List<String> wordList = new ArrayList<>();
-        for (Position<String> position : path) {
+        for (Position<String> position : path.getLeft()) {
             wordList.add(position.getNgram());
         }
 
-        int s = path.get(0).getStart();
+        int s = path.getLeft().get(0).getStart();
         int e = lst.get(lst.size() - 1).getLeft().getEnd();
-        return new Position<>(wordList, s, e);
+        return new ScorePosition<>(wordList, path.getRight(), s, e);
 
     }
 
-    private List<Position<String>> calculatePaths(List<Pair<ScorePosition, MaybeRange>> lst) {
+    private Pair<List<Position<String>>, Double> calculatePaths(List<Pair<ScorePosition<String>, MaybeRange>> lst) {
         int j = lst.size();
 
         HashMap<Integer, Double> memo = new HashMap<>();
@@ -269,13 +269,13 @@ public class WordSegmentation {
         List<Position<String>> path = new ArrayList<>();
         path(j, path, memo, lst);
         Collections.reverse(path);
-        return path;
+        return Pair.of(path, result);
     }
 
     private void path(int j,
                       List<Position<String>> path,
                       HashMap<Integer, Double> memo,
-                      List<Pair<ScorePosition, MaybeRange>> lst) {
+                      List<Pair<ScorePosition<String>, MaybeRange>> lst) {
         if (j == 0) {
             return;
         }
@@ -287,35 +287,32 @@ public class WordSegmentation {
             if (j != 1) {
                 path(j - 1, path, memo, lst);
             } else {
-                path.add(forgetScore(lst.get(0).getLeft()));
+                path.add(lst.get(0).getLeft());
             }
         } else {
-            Pair<ScorePosition, MaybeRange> prev = lst.get(j - 1);
+            Pair<ScorePosition<String>, MaybeRange> prev = lst.get(j - 1);
             MaybeRange range = prev.getRight();
             if (!range.end.isPresent()) {
-                path.add(forgetScore(prev.getLeft()));
+                path.add(prev.getLeft());
                 path(prev.getRight().start, path, memo, lst);
             } else {
                 List<Double> pList = Arrays.asList(memo.get(range.start - 1), memo.get(range.end.get() - 1));
                 Double maxP = Double.max(pList.get(0), pList.get(1));
-                path.add(forgetScore(prev.getLeft()));
+                path.add(prev.getLeft());
                 path(pList.get(0).equals(maxP) ? range.start : range.end.get(), path, memo, lst);
 
             }
         }
     }
 
-    private Position<String> forgetScore(ScorePosition left) {
-        return new Position<>(left.getNgram(), left.getStart(), left.getEnd());
-    }
 
-    private Double opt(int j, List<Pair<ScorePosition, MaybeRange>> lst, HashMap<Integer, Double> memo) {
+    private Double opt(int j, List<Pair<ScorePosition<String>, MaybeRange>> lst, HashMap<Integer, Double> memo) {
         if (j == 0) return null;
 
         if (memo.containsKey(j - 1)) {
             return memo.get(j - 1);
         } else {
-            Pair<ScorePosition, MaybeRange> next = lst.get(j - 1);
+            Pair<ScorePosition<String>, MaybeRange> next = lst.get(j - 1);
             Double max = max(
                     //choose j
                     add(opt(next.getRight().start, lst, memo),
@@ -344,12 +341,12 @@ public class WordSegmentation {
         }
     }
 
-    private Double penalize(int current, Integer prev, List<Pair<ScorePosition, MaybeRange>> lst) {
+    private Double penalize(int current, Integer prev, List<Pair<ScorePosition<String>, MaybeRange>> lst) {
         double penalty = -10;
         double bigramReward = 0;
         double gap;
-        Pair<ScorePosition, MaybeRange> curr = lst.get(current - 1);
-        Pair<ScorePosition, MaybeRange> previous = lst.get(prev - 1);
+        Pair<ScorePosition<String>, MaybeRange> curr = lst.get(current - 1);
+        Pair<ScorePosition<String>, MaybeRange> previous = lst.get(prev - 1);
 
         if (prev == 0) {
             gap = penalty * (curr.getLeft().getStart());
@@ -400,16 +397,40 @@ public class WordSegmentation {
 
     }
 
-    private static class ScorePosition extends Position<String> {
+    private static class ScorePosition<T> extends Position<T> {
         private final Double score;
 
-        ScorePosition(String ngram, Double score, int start, int end) {
+        ScorePosition(T ngram, Double score, int start, int end) {
             super(ngram, start, end);
             this.score = score;
         }
 
         public Double getScore() {
             return score;
+        }
+
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            if (!super.equals(o)) return false;
+            ScorePosition<?> that = (ScorePosition<?>) o;
+            return Objects.equals(score, that.score);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(super.hashCode(), score);
+        }
+
+        @Override
+        public String toString() {
+            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
+                    .append("score", score)
+                    .append("start", start)
+                    .append("end", end)
+                    .append("ngram", ngram)
+                    .toString();
         }
     }
 
@@ -429,13 +450,35 @@ public class WordSegmentation {
             return super.getNgram();
         }
 
+        @Override
+        public boolean equals(Object o) {
+            if (this == o) return true;
+            if (o == null || getClass() != o.getClass()) return false;
+            if (!super.equals(o)) return false;
+            WordPosition that = (WordPosition) o;
+            return Objects.equals(suffix, that.suffix);
+        }
+
+        @Override
+        public int hashCode() {
+            return Objects.hash(super.hashCode(), suffix);
+        }
+
+        @Override
+        public String toString() {
+            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
+                    .append("suffix", suffix)
+                    .append("start", start)
+                    .append("end", end)
+                    .append("ngram", ngram)
+                    .toString();
+        }
     }
 
     private static class Position<T> {
-        private final int start;
-        private final int end;
-
-        private final T ngram;
+        protected final int start;
+        protected final int end;
+        protected final T ngram;
 
         Position(T ngram, int start, int end) {
             this.ngram = ngram;
