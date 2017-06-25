@@ -1,8 +1,6 @@
 package vision.trademark.nlp;
 
 import org.apache.commons.lang3.StringUtils;
-import org.apache.commons.lang3.builder.ToStringBuilder;
-import org.apache.commons.lang3.builder.ToStringStyle;
 import org.apache.commons.lang3.tuple.Pair;
 import org.jgrapht.DirectedGraph;
 import org.jgrapht.alg.ConnectivityInspector;
@@ -36,25 +34,6 @@ public class WordSegmentation {
 
         this.ngramTree = ngramTree(minLength, loadWordList("/unigrams.txt.gz"));
         this.minLength = minLength;
-    }
-
-    private static Map<String, Long> loadWordList(String resourcePath) {
-        try (InputStream in = new GZIPInputStream(WordSegmentation.class.getResourceAsStream(resourcePath));
-             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
-            HashMap<String, Long> xs = new HashMap<>();
-            r.lines()
-                    .filter(StringUtils::isNotBlank)
-                    .map(x -> x.split("\t"))
-                    .filter(x -> x.length == 2)
-                    .forEach(x -> {
-                        String key = x[0].trim().toLowerCase();
-                        Long val = Long.parseLong(x[1]);
-                        xs.put(key, val);
-                    });
-            return xs;
-        } catch (IOException e) {
-            throw new RuntimeException(e);
-        }
     }
 
 
@@ -105,9 +84,9 @@ public class WordSegmentation {
     private List<ScorePosition<String>> meaningfulWords(int minLength, String text, Map<String, List<String>> ngramTree) {
         List<ScorePosition<String>> meaningfulWords = new ArrayList<>();
 
-        List<WordPosition> cuts = cuts(minLength, text);
+        List<SuffixedPosition> cuts = cuts(minLength, text);
         for (int i = cuts.size() - 1; i >= 0; i--) {
-            WordPosition x = cuts.get(i);
+            SuffixedPosition x = cuts.get(i);
             List<String> words = ngramTree.get(x.getPrefix());
             if (words != null) {
                 int start = x.getStart();
@@ -157,35 +136,6 @@ public class WordSegmentation {
             }
         }
         return new ConnectivityInspector<>(graph).connectedSets();
-    }
-
-    /**
-     * Maps ngrams of length {@param minLength} to the words starting with them.
-     * Note we need to calculate this for the specific length we're allowing,
-     * so we either do this for each segmentation (and incur the CPU cost, but
-     * allow changing the minLength) or at construction (and incur a memory cost,
-     * and restrict it to a single length).
-     * <p>
-     * We've opted to the latter.
-     */
-    private Map<String, List<String>> ngramTree(int minLength, Map<String, Long> unigramCounts) {
-        Map<String, List<String>> ngramTree = new HashMap<>();
-        for (Map.Entry<String, Long> e : unigramCounts.entrySet()) {
-            String entry = e.getKey();
-            if (entry.length() >= minLength) {
-                String cut = entry.substring(0, minLength);
-
-                if (!ngramTree.containsKey(cut)) {
-                    ArrayList<String> v = new ArrayList<>();
-                    v.add(entry);
-                    ngramTree.put(cut, v);
-                } else {
-                    ngramTree.get(cut).add(entry);
-                }
-            }
-        }
-
-        return ngramTree;
     }
 
     private List<Pair<Integer, Integer>> missingSegments(String text, Set<Integer> meaningfulIndices) {
@@ -366,11 +316,11 @@ public class WordSegmentation {
     }
 
 
-    private List<WordPosition> cuts(int minLen, String word) {
-        ArrayList<WordPosition> xs = new ArrayList<>();
+    private List<SuffixedPosition> cuts(int minLen, String word) {
+        ArrayList<SuffixedPosition> xs = new ArrayList<>();
         int counter = 0;
         for (int i = minLen; i < word.length() + 1; i++) {
-            xs.add(new WordPosition(word.substring(counter, i), counter, counter + minLen, word.substring(i, word.length())));
+            xs.add(new SuffixedPosition(word.substring(counter, i), counter, counter + minLen, word.substring(i, word.length())));
             counter++;
         }
         return xs;
@@ -390,172 +340,58 @@ public class WordSegmentation {
 
     // Simplifying porting from python
     private class CircularList<E> extends ArrayList<E> {
+
         @Override
         public E get(int i) {
             return super.get(i < 0 ? i + size() : i);
         }
 
     }
+    /**
+     * Maps ngrams of length {@param minLength} to the words starting with them.
+     * Note we need to calculate this for the specific length we're allowing,
+     * so we either do this for each segmentation (and incur the CPU cost, but
+     * allow changing the minLength) or at construction (and incur a memory cost,
+     * and restrict it to a single length).
+     * <p>
+     * We've opted to the latter.
+     */
+    private Map<String, List<String>> ngramTree(int minLength, Map<String, Long> unigramCounts) {
+        Map<String, List<String>> ngramTree = new HashMap<>();
+        for (Map.Entry<String, Long> e : unigramCounts.entrySet()) {
+            String entry = e.getKey();
+            if (entry.length() >= minLength) {
+                String cut = entry.substring(0, minLength);
 
-    private static class ScorePosition<T> extends Position<T> {
-        private final Double score;
-
-        ScorePosition(T ngram, Double score, int start, int end) {
-            super(ngram, start, end);
-            this.score = score;
+                if (!ngramTree.containsKey(cut)) {
+                    ArrayList<String> v = new ArrayList<>();
+                    v.add(entry);
+                    ngramTree.put(cut, v);
+                } else {
+                    ngramTree.get(cut).add(entry);
+                }
+            }
         }
 
-        public Double getScore() {
-            return score;
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            if (!super.equals(o)) return false;
-            ScorePosition<?> that = (ScorePosition<?>) o;
-            return Objects.equals(score, that.score);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(super.hashCode(), score);
-        }
-
-        @Override
-        public String toString() {
-            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
-                    .append("score", score)
-                    .append("start", start)
-                    .append("end", end)
-                    .append("ngram", ngram)
-                    .toString();
-        }
+        return ngramTree;
     }
 
-    private static class WordPosition extends Position<String> {
-        private final String suffix;
-
-        WordPosition(String ngram, int start, int end, String suffix) {
-            super(ngram, start, end);
-            this.suffix = suffix;
-        }
-
-        public String getSuffix() {
-            return this.suffix;
-        }
-
-        public String getPrefix() {
-            return super.getNgram();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            if (!super.equals(o)) return false;
-            WordPosition that = (WordPosition) o;
-            return Objects.equals(suffix, that.suffix);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(super.hashCode(), suffix);
-        }
-
-        @Override
-        public String toString() {
-            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
-                    .append("suffix", suffix)
-                    .append("start", start)
-                    .append("end", end)
-                    .append("ngram", ngram)
-                    .toString();
+    private static Map<String, Long> loadWordList(String resourcePath) {
+        try (InputStream in = new GZIPInputStream(WordSegmentation.class.getResourceAsStream(resourcePath));
+             BufferedReader r = new BufferedReader(new InputStreamReader(in, StandardCharsets.UTF_8))) {
+            HashMap<String, Long> xs = new HashMap<>();
+            r.lines()
+                    .filter(StringUtils::isNotBlank)
+                    .map(x -> x.split("\t"))
+                    .filter(x -> x.length == 2)
+                    .forEach(x -> {
+                        String key = x[0].trim().toLowerCase();
+                        Long val = Long.parseLong(x[1]);
+                        xs.put(key, val);
+                    });
+            return xs;
+        } catch (IOException e) {
+            throw new RuntimeException(e);
         }
     }
-
-    private static class Position<T> {
-        protected final int start;
-        protected final int end;
-        protected final T ngram;
-
-        Position(T ngram, int start, int end) {
-            this.ngram = ngram;
-            this.start = start;
-            this.end = end;
-        }
-
-
-        @Override
-        public String toString() {
-            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
-                    .append("ngram", getNgram())
-                    .append("start", getStart())
-                    .append("end", getEnd())
-                    .toString();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (!(o instanceof Position)) return false;
-            Position position = (Position) o;
-            return getStart() == position.getStart() &&
-                    getEnd() == position.getEnd() &&
-                    Objects.equals(getNgram(), position.getNgram());
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(getNgram(), getStart(), getEnd());
-        }
-
-        public int getStart() {
-            return start;
-        }
-
-        public int getEnd() {
-            return end;
-        }
-
-        public T getNgram() {
-            return ngram;
-        }
-
-    }
-
-    private class MaybeRange {
-        final Integer start;
-        final Optional<Integer> end;
-
-        MaybeRange(Integer start, Optional<Integer> end) {
-            this.start = start;
-            this.end = end;
-        }
-
-        @Override
-        public String toString() {
-            return new ToStringBuilder(this, ToStringStyle.NO_CLASS_NAME_STYLE)
-                    .append("start", start)
-                    .append("end", end)
-                    .toString();
-        }
-
-        @Override
-        public boolean equals(Object o) {
-            if (this == o) return true;
-            if (o == null || getClass() != o.getClass()) return false;
-            MaybeRange maybeRange = (MaybeRange) o;
-            return Objects.equals(start, maybeRange.start) &&
-                    Objects.equals(end, maybeRange.end);
-        }
-
-        @Override
-        public int hashCode() {
-            return Objects.hash(start, end);
-        }
-    }
-
-
 }
