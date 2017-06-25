@@ -112,26 +112,22 @@ public class WordSegmentation {
 
     /**
      * Places {@param meaningfulWords} in a graph (connected by positions), returning all connected subgraphs as sets.
-     *
-     * @param meaningfulWords
      */
     private List<Set<ScorePosition<String>>> connectedSets(List<ScorePosition<String>> meaningfulWords) {
         DirectedGraph<ScorePosition<String>, DefaultEdge> graph = new DefaultDirectedGraph<>(DefaultEdge.class);
         for (ScorePosition<String> x : meaningfulWords) {
             graph.addVertex(x);
         }
-        Set<Set<Position>> seen = new HashSet<>();
-        for (ScorePosition x : meaningfulWords) {
-            for (ScorePosition y : meaningfulWords) {
-                if (!x.equals(y)) {
-                    if (!isNotIntersecting(x, y)) {
-                        Set<Position> check = new HashSet<>();
-                        check.add(x);
-                        check.add(y);
-                        if (!seen.contains(check)) {
-                            graph.addEdge(x, y);
-                            seen.add(check);
-                        }
+        Set<Set<Position<String>>> seen = new HashSet<>();
+        for (ScorePosition<String> l : meaningfulWords) {
+            for (ScorePosition<String> r : meaningfulWords) {
+                if (!l.equals(r) && !isNotIntersecting(l, r)) {
+                    Set<Position<String>> check = new HashSet<>();
+                    check.add(l);
+                    check.add(r);
+                    if (!seen.contains(check)) {
+                        graph.addEdge(l, r);
+                        seen.add(check);
                     }
                 }
             }
@@ -277,7 +273,7 @@ public class WordSegmentation {
     }
 
     private Double penalize(int curri, int previ, List<Pair<ScorePosition<String>, MaybeRange>> lst) {
-        double penalty = -10.0; //TODO why this?
+        double penalty = -10.0; //FIXME how was this arrived at?
         Pair<ScorePosition<String>, MaybeRange> curr = lst.get(curri - 1);
         Pair<ScorePosition<String>, MaybeRange> prev = lst.get(previ - 1);
 
