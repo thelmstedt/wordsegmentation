@@ -31,11 +31,10 @@ public class WordSegmentationTest {
         assertThat(segment, is(xs));
     }
 
-    //TODO still some bad splits
     @Test
     public void testLarge() throws Exception {
         String x = "MARGARETAREYOUGRIEVINGOVERGOLDENGROVEUNLEAVINGLEAVESLIKETHETHINGSOFMANYOUWITHYOURFRESHTHOUGHTSCAREFORCANYOUAHASTHEHEARTGROWSOLDERITWILLCOMETOSUCHSIGHTSCOLDERBYANDBYNORSPAREASIGHTHOUGHWORLDSOFWANWOODLEAFMEALLIEANDYETYOUWILLWEEPANDKNOWWHYNOWNOMATTERCHILDTHENAMESORROWSSPRINGSARETHESAMENORMOUTHHADNONORMINDEXPRESSEDWHATHEARTHEARDOFGHOSTGUESSEDITISTHEBLIGHTMANWASBORNFORITISMARGARETYOUMOURNFOR";
-        List<String> xs = Stream.of("margaret", "are", "you", "grieving", "over", "golden", "grove", "un", "leaving", "leaves", "like", "the", "things", "of", "man", "you", "with", "your", "fresh", "thoughts", "care", "for", "can", "you", "a", "has", "the", "heart", "grows", "older", "it", "will", "come", "to", "such", "sights", "colder", "by", "and", "by", "nor", "spare", "a", "sigh", "though", "worlds", "of", "wan", "wood", "leaf", "me", "allie", "and", "yet", "you", "will", "weep", "and", "know", "why", "now", "no", "matter", "child", "the", "name", "sorrows", "springs", "are", "the", "same", "nor", "mouth", "had", "non", "or", "mind", "expressed", "what", "he", "art", "heard", "of", "ghost", "guessed", "it", "is", "the", "blight", "man", "was", "born", "for", "it", "is", "margaret", "you", "mourn", "for").collect(Collectors.toList());
+        List<String> xs = Stream.of("margaret", "are", "you", "grieving", "over", "golden", "grove", "un", "leaving", "leaves", "like", "the", "things", "of", "man", "you", "with", "your", "fresh", "thoughts", "care", "for", "can", "you", "a", "has", "the", "heart", "grows", "older", "it", "will", "come", "to", "such", "sights", "colder", "by", "and", "by", "nor", "spare", "a", "sigh", "though", "worlds", "of", "wan", "wood", "leaf", "me", "allie", "and", "yet", "you", "will", "weep", "and", "know", "why", "now", "no", "matter", "child", "the", "name", "sorrows", "springs", "are", "the", "same", "nor", "mouth", "had", "non", "or", "mind", "expressed", "what", "heart", "heard", "of", "ghost", "guessed", "it", "is", "the", "blight", "man", "was", "born", "for", "it", "is", "margaret", "you", "mourn", "for").collect(Collectors.toList());
         List<String> segment = ws.segment(x);
         System.out.println(segment);
         assertThat(String.join("\n", segment), is(String.join("\n", xs)));
