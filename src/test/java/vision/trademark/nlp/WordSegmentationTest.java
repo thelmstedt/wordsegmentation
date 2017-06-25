@@ -22,13 +22,14 @@ public class WordSegmentationTest {
         assertThat("narcissism", ws.segment("trademarkvision"), is(Arrays.asList("trademark", "vision")));
     }
 
+    /**
+     * Valid but undesired segmentations are often made when we have bigrams
+     * with small, common words. Eg. ("are" -> "a" "re"), ("heart" -> "he" "art")
+     */
     @Test
-    public void testAShenanigans() throws Exception {
-        String x = "MARGARETAREYOU";
-        List<String> xs = Stream.of("margaret", "are", "you").collect(Collectors.toList());
-        List<String> segment = ws.segment(x);
-
-        assertThat(segment, is(xs));
+    public void testWeakBigramChoice() throws Exception {
+        assertThat(ws.segment("MARGARETAREYOU"), is(Stream.of("margaret", "are", "you").collect(Collectors.toList())));
+        assertThat(ws.segment("theheartgrowsolder"), is(Stream.of("the", "heart", "grows", "older").collect(Collectors.toList())));
     }
 
     @Test

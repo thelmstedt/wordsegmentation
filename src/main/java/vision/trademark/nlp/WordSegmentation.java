@@ -13,12 +13,13 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
 import java.util.*;
-import java.util.function.Function;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.zip.GZIPInputStream;
 
 public class WordSegmentation {
+    private static final double TOTAL = 1024908267229.0;
+
     private final Map<String, Long> bigramCounts;
     private final Map<String, Long> fullUnigramCounts;
     private final Map<String, List<String>> ngramTree;
@@ -255,7 +256,6 @@ public class WordSegmentation {
         }
     }
 
-
     private Double opt(int j, List<Pair<ScorePosition<String>, MaybeRange>> lst, HashMap<Integer, Double> memo) {
         if (j == 0) return null;
 
@@ -274,47 +274,33 @@ public class WordSegmentation {
             memo.put(j - 1, max);
             return max;
         }
-
     }
 
-    private Double max(Double d1, Double d2) {
-        if (d1 == null) return d2;
-        if (d2 == null) return d1;
-        return Double.max(d1, d2);
-    }
+    private Double penalize(int curri, int previ, List<Pair<ScorePosition<String>, MaybeRange>> lst) {
+        double penalty = -10.0; //TODO why this?
+        Pair<ScorePosition<String>, MaybeRange> curr = lst.get(curri - 1);
+        Pair<ScorePosition<String>, MaybeRange> prev = lst.get(previ - 1);
 
-    private Double add(Double d1, Double d2, Double d3) {
-        if (d1 == null) {
-            return d2 + d3;
-        } else {
-            return d1 + d2 + d3;
+        if (previ == 0) { // penalize gaps between words
+            return penalty * (curr.getLeft().getStart());
         }
+
+        return stupidBackoff(curr, prev);
     }
 
-    private Double penalize(int current, Integer prev, List<Pair<ScorePosition<String>, MaybeRange>> lst) {
-        double penalty = -10;
-        double bigramReward = 0;
-        double gap;
-        Pair<ScorePosition<String>, MaybeRange> curr = lst.get(current - 1);
-        Pair<ScorePosition<String>, MaybeRange> previous = lst.get(prev - 1);
-
-        if (prev == 0) {
-            gap = penalty * (curr.getLeft().getStart());
-        } else if (curr.getLeft().getStart() - previous.getLeft().getEnd() == 1) {
-            String l = previous.getLeft().getNgram();
-            String r = curr.getLeft().getNgram();
-            String bigram = String.format("%s %s", l, r);
-            if (bigramCounts.containsKey(bigram)) {
-                bigramReward = (bigramCounts.get(bigram) / 1024908267229.0 / previous.getLeft().getScore()) - curr.getLeft().getScore();
+    /**
+     * Stupid backoff from http://www.aclweb.org/anthology/D07-1090.pdf
+     */
+    private Double stupidBackoff(Pair<ScorePosition<String>, MaybeRange> curr, Pair<ScorePosition<String>, MaybeRange> prev) {
+        double alpha = 0.4;
+        if (curr.getLeft().getStart() - prev.getLeft().getEnd() == 1) {
+            Long count = bigramCounts.get(String.format("%s %s", prev.getLeft().getNgram(), curr.getLeft().getNgram()));
+            if (count != null) {
+                return (count / TOTAL) / prev.getLeft().getScore();
             }
-
-            gap = 0;
-        } else {
-            gap = 0;
         }
-        return gap + bigramReward;
+        return prev.getLeft().getScore() * alpha;
     }
-
 
     private List<SuffixedPosition> cuts(int minLen, String word) {
         ArrayList<SuffixedPosition> xs = new ArrayList<>();
@@ -326,17 +312,32 @@ public class WordSegmentation {
         return xs;
     }
 
-    private boolean isNotIntersecting(Position left, Position right) {
-        return right.getEnd() < left.getStart() || right.getStart() > left.getEnd();
-    }
-
     private double getUnigramScore(String word) {
-        double scale = Math.log10(1024908267229.0);
+        double scale = Math.log10(TOTAL);
         Long x = fullUnigramCounts.get(word);
         return x != null
                 ? Math.log10(x) - scale
                 : Math.log10(10.0) - (scale + Math.log10(Math.pow(10, word.length())));
     }
+
+    private static boolean isNotIntersecting(Position<String> left, Position<String> right) {
+        return right.getEnd() < left.getStart() || right.getStart() > left.getEnd();
+    }
+
+    private static Double max(Double d1, Double d2) {
+        if (d1 == null) return d2;
+        if (d2 == null) return d1;
+        return Double.max(d1, d2);
+    }
+
+    private static Double add(Double d1, Double d2, Double d3) {
+        if (d1 == null) {
+            return d2 + d3;
+        } else {
+            return d1 + d2 + d3;
+        }
+    }
+
 
     // Simplifying porting from python
     private class CircularList<E> extends ArrayList<E> {
@@ -347,6 +348,7 @@ public class WordSegmentation {
         }
 
     }
+
     /**
      * Maps ngrams of length {@param minLength} to the words starting with them.
      * Note we need to calculate this for the specific length we're allowing,
